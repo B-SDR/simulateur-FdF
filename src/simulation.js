@@ -65,7 +65,11 @@ export class FireSimulation {
     this.setWind(options.windDirection ?? 0, options.windSpeed ?? 15);
     this.vegetation = options.vegetation ?? 0.75;
     this._rng = mulberry32(options.seed ?? 1337);
-    this._generate(options.seed ?? 1337);
+    this._generate(options.seed ?? 1337, {
+      heightM: options.realHeightM || null,
+      fuel: options.realFuel || null,
+      water: options.realWater || null,
+    });
   }
 
   get cells() {
@@ -101,13 +105,9 @@ export class FireSimulation {
     }
   }
 
-  _generate(seed) {
+  _generate(seed, real = {}) {
     const N = this.size;
     const S = N * N;
-    const rng = mulberry32(seed ^ 0x9e3779b9);
-    const hN = fbm(rng, 5, 4);
-    const vN = fbm(rng, 3, 6);
-    const mN = fbm(rng, 3, 5);
     this.height = new Float32Array(S);
     this.fuelNoise = new Float32Array(S);
     this.fuel0 = new Float32Array(S);
@@ -117,15 +117,35 @@ export class FireSimulation {
     this.burnLeft = new Int16Array(S);
     this._prob = new Float32Array(S);
     this.burningCells = [];
-    for (let j = 0; j < N; j++) {
-      for (let i = 0; i < N; i++) {
-        const k = j * N + i;
-        const u = i / (N - 1), v = j / (N - 1);
-        const edge = Math.min(1, Math.min(u, v, 1 - u, 1 - v) * 8);
-        let h = Math.pow(hN(u, v), 1.3);
-        h = (h * 0.25 + h * edge) / 1.25;
-        this.height[k] = clamp01(h);
-        this.fuelNoise[k] = clamp01(Math.pow(vN(u, v), 0.85) + 0.42);
+    if (real.heightM) {
+      let hMin = Infinity, hMax = -Infinity;
+      for (let k = 0; k < S; k++) {
+        hMin = Math.min(hMin, real.heightM[k]);
+        hMax = Math.max(hMax, real.heightM[k]);
+      }
+      this.elevationRange = Math.max(1, hMax - hMin);
+      this.water = real.water || new Uint8Array(S);
+      for (let k = 0; k < S; k++) {
+        this.height[k] = (real.heightM[k] - hMin) / this.elevationRange;
+        this.fuelNoise[k] = real.fuel ? real.fuel[k] : this.water[k] ? 0 : 0.6;
+      }
+    } else {
+      this.elevationRange = 1;
+      this.water = null;
+      const rng = mulberry32(seed ^ 0x9e3779b9);
+      const hN = fbm(rng, 5, 4);
+      const vN = fbm(rng, 3, 6);
+      const mN = fbm(rng, 3, 5);
+      for (let j = 0; j < N; j++) {
+        for (let i = 0; i < N; i++) {
+          const k = j * N + i;
+          const u = i / (N - 1), v = j / (N - 1);
+          const edge = Math.min(1, Math.min(u, v, 1 - u, 1 - v) * 8);
+          let h = Math.pow(hN(u, v), 1.3);
+          h = (h * 0.25 + h * edge) / 1.25;
+          this.height[k] = clamp01(h);
+          this.fuelNoise[k] = clamp01(Math.pow(vN(u, v), 0.85) + 0.42);
+        }
       }
     }
     this._applyMoisture();

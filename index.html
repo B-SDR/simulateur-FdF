@@ -30,6 +30,23 @@
       transition: opacity 0.6s;
     }
     #hint.hidden { opacity: 0; }
+    #loading {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: rgba(12, 10, 8, 0.55); z-index: 10;
+      transition: opacity 0.3s;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+    #loading-box {
+      background: rgba(20, 16, 12, 0.92); color: #f5ead9;
+      padding: 22px 30px; border-radius: 14px; font-size: 15px;
+      border: 1px solid rgba(255, 200, 140, 0.35);
+      text-align: center;
+    }
+    #loading-box::before {
+      content: '🔥'; display: block; font-size: 28px; margin-bottom: 8px;
+      animation: pulse 1s infinite alternate;
+    }
+    @keyframes pulse { from { opacity: 0.6; } to { opacity: 1; } }
     .lil-gui { --background-color: rgba(20, 16, 12, 0.85) !important; }
   </style>
   <script type="importmap">
@@ -44,6 +61,7 @@
 <body>
   <div id="stats">Surface brûlée : <b>0.0 %</b><br>Foyers actifs : <b>0</b><br>Temps simulé : <b>00:00</b></div>
   <div id="hint">Cliquez sur le terrain pour allumer un feu — molette / clic droit pour naviguer</div>
+  <div id="loading" class="hidden"><div id="loading-box"><span id="loading-msg">Téléchargement…</span></div></div>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

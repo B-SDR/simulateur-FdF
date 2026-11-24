@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { FireSimulation, State } from './simulation.js';
+import { loadRealTerrain, PRESETS } from './realMap.js';
 
 const N = 128;
 const WORLD = 140;
@@ -21,6 +22,13 @@ const params = {
   vitesse: TICKS_PER_SEC_DEFAULT,
   pause: false,
   seed: 1337,
+  carte: 'clape',
+  carteLat: 43.155,
+  carteLon: 3.13,
+  carteTailleKm: 10,
+  exageration: 2.2,
+  textureSatellite: true,
+  arbres3D: true,
 };
 
 const statsEl = document.getElementById('stats');
@@ -92,8 +100,14 @@ scene.add(terrain);
 const cellHash = new Float32Array(N * N);
 for (let k = 0; k < N * N; k++) cellHash[k] = (Math.imul(k + 1, 2654435761) >>> 0) / 4294967296;
 
+let visScale = 14;
+let realScale = 14;
+let isRealMap = false;
+let satTexture = null;
+let loadToken = 0;
+
 function applyHeights() {
-  for (let k = 0; k < N * N; k++) terrainPos.setY(k, sim.height[k] * sim.heightScale);
+  for (let k = 0; k < N * N; k++) terrainPos.setY(k, sim.height[k] * visScale);
   terrainPos.needsUpdate = true;
   terrainGeo.computeVertexNormals();
 }
@@ -117,6 +131,10 @@ const _p = new THREE.Vector3();
 const _c = new THREE.Color();
 
 function buildTrees() {
+  if (!params.arbres3D) {
+    trees.count = 0;
+    return;
+  }
   let n = 0;
   const rngSeed = params.seed;
   let s = rngSeed >>> 0;
@@ -130,7 +148,7 @@ function buildTrees() {
       if (sim.fuel0[k] < 0.4 || rand() > 0.8) continue;
       const [x, z] = cellWorld(i, j);
       const scale = 0.7 + sim.fuel0[k] * 0.25 + rand() * 0.5;
-      _p.set(x + (rand() - 0.5) * CELL * 1.2, sim.height[k] * sim.heightScale - 0.1, z + (rand() - 0.5) * CELL * 1.2);
+      _p.set(x + (rand() - 0.5) * CELL * 1.2, sim.height[k] * visScale - 0.1, z + (rand() - 0.5) * CELL * 1.2);
       _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * Math.PI * 2);
       _s.setScalar(scale);
       trees.setMatrixAt(n, _m4.compose(_p, _q, _s));
@@ -278,6 +296,18 @@ function updateTerrainColors(time) {
       terrainColors[c + 1] = v;
       terrainColors[c + 2] = v * 0.9;
     } else {
+      if (sim.water && sim.water[k]) {
+        terrainColors[c] = 0.13;
+        terrainColors[c + 1] = 0.26;
+        terrainColors[c + 2] = 0.38;
+        continue;
+      }
+      if (isRealMap && satTexture && terrainMat.map) {
+        terrainColors[c] = 1;
+        terrainColors[c + 1] = 1;
+        terrainColors[c + 2] = 1;
+        continue;
+      }
       const f = Math.min(1, fuel[k] * 1.5);
       const g = 0.5 + 0.5 * Math.sin(k * 0.37);
       terrainColors[c] = 0.5 * (1 - f) + (0.10 + g * 0.05) * f;
@@ -325,7 +355,7 @@ function updateParticles(time) {
     const i = k % N, j = (k / N) | 0;
     const hx = cellHash[k];
     const [x, z] = cellWorld(i, j);
-    const baseY = sim.height[k] * sim.heightScale;
+    const baseY = sim.height[k] * visScale;
     const rise = 1.4 + sim.fuel0[k] * 2.6;
     for (let q = 0; q < FIRE_PARTICLES_PER_CELL; q++) {
       const idx = c * FIRE_PARTICLES_PER_CELL + q;
@@ -355,7 +385,7 @@ function updateParticles(time) {
     const i = k % N, j = (k / N) | 0;
     const hx = cellHash[k];
     const [x, z] = cellWorld(i, j);
-    const baseY = sim.height[k] * sim.heightScale;
+    const baseY = sim.height[k] * visScale;
     const life = (time * 0.28 + hx * 5.31) % 1;
     const drift = life * (6 + wNorm * 16);
     smokePos[c * 3] = x + wx * drift + Math.sin(hx * 17 + time + life * 5) * life * 1.5;
@@ -377,7 +407,7 @@ function updateParticles(time) {
       const k = list[c];
       const [x, z] = cellWorld(k % N, (k / N) | 0);
       cx += x;
-      cy += sim.height[k] * sim.heightScale;
+      cy += sim.height[k] * visScale;
       cz += z;
       cnt++;
     }
@@ -400,13 +430,129 @@ const fSim = gui.addFolder('Simulation');
 fSim.add(params, 'vitesse', 0, 60, 1).name('Vitesse (ticks/s)');
 fSim.add(params, 'pause').name('Pause');
 fSim.add({ reset: () => { sim.resetFire(); } }, 'reset').name('Réinitialiser le feu');
-fSim.add({ regen: () => regen(params.seed + 1) }, 'regen').name('Nouveau terrain');
+fSim.add({ regen: () => regen() }, 'regen').name('Nouveau terrain');
 fSim.add({ ignite: () => sim.igniteArea(N / 2, N / 2, 2) }, 'ignite').name('Feu au centre');
 fConditions.close();
 fTerrain.close();
 
-function regen(seed) {
+const fCarte = gui.addFolder('Carte réelle');
+fCarte
+  .add(params, 'carte', {
+    '— Choisir un site —': 'none',
+    'Massif de la Clape': 'clape',
+    'Massif de Fontfroide': 'fontfroide',
+    'Corbières — Peyrepertuse': 'peyrepertuse',
+    'Cévennes — Mont Aigoual': 'aigoual',
+    'Sainte-Victoire': 'sainte-victoire',
+    'Zone personnalisée': 'custom',
+  })
+  .name('Site')
+  .onChange((id) => {
+    if (id === 'none') {
+      flashStats("Terrain procédural — rechargez-le via 'Nouveau terrain' si besoin");
+      return;
+    }
+    const preset = PRESETS[id] || PRESETS.clape;
+    params.carteLat = preset.lat;
+    params.carteLon = preset.lon;
+    params.carteTailleKm = preset.sizeKm;
+    gui.controllersRecursive().forEach((c) => c.updateDisplay());
+    loadRealMap();
+  });
+fCarte.add(params, 'carteLat', -60, 75, 0.005).name('Latitude centre');
+fCarte.add(params, 'carteLon', -180, 180, 0.005).name('Longitude centre');
+fCarte
+  .add(params, 'carteTailleKm', 3, 25, 1)
+  .name('Côté de la zone (km)')
+  .onFinishChange(() => {
+    if (params.carte !== 'none') loadRealMap();
+  });
+fCarte
+  .add(params, 'exageration', 0.5, 4, 0.1)
+  .name('Exagération verticale')
+  .onChange(() => {
+    if (isRealMap) setVerticalScale();
+  });
+fCarte.add(params, 'textureSatellite').name('Texture satellite').onChange((v) => {
+  terrainMat.map = v && isRealMap && satTexture ? satTexture : null;
+  terrainMat.needsUpdate = true;
+  updateTerrainColors(0);
+});
+fCarte.add(params, 'arbres3D').name('Arbres 3D').onChange((v) => {
+  trees.visible = v;
+  if (v) buildTrees();
+});
+fCarte.add({ load: () => loadRealMap() }, 'load').name('Charger la carte réelle');
+fCarte.close();
+
+function setVerticalScale() {
+  visScale = isRealMap ? realScale * params.exageration : sim.heightScale;
+  applyHeights();
+}
+
+async function loadRealMap() {
+  const token = ++loadToken;
+  const loadingEl = document.getElementById('loading');
+  const loadingMsg = document.getElementById('loading-msg');
+  loadingEl.classList.remove('hidden');
+  try {
+    const data = await loadRealTerrain({
+      lat: params.carteLat,
+      lon: params.carteLon,
+      sizeKm: params.carteTailleKm,
+      gridN: N,
+      onProgress: (done, total, what) => {
+        if (token === loadToken) {
+          loadingMsg.textContent = 'Téléchargement ' + what + '… ' + done + '/' + Math.max(total, 1) + ' tuiles';
+        }
+      },
+    });
+    if (token !== loadToken) return;
+    loadingMsg.textContent = 'Construction du terrain 3D…';
+    await new Promise((res) => setTimeout(res, 30));
+    if (token !== loadToken) return;
+    sim = new FireSimulation({
+      size: N,
+      heightScale: ((data.elevationMax - data.elevationMin) * WORLD) / data.bbox.sizeM,
+      humidity: params.humidite / 100,
+      windSpeed: params.ventVitesse,
+      windDirection: params.ventDirection,
+      vegetation: params.vegetation / 100,
+      slopeGain: params.effetPente / 100,
+      realHeightM: data.heightsM,
+      realFuel: data.fuels,
+      realWater: data.water,
+    });
+    realScale = sim.heightScale;
+    isRealMap = true;
+    satTexture = new THREE.CanvasTexture(data.textureCanvas);
+    satTexture.colorSpace = THREE.SRGBColorSpace;
+    satTexture.anisotropy = 4;
+    terrainMat.map = params.textureSatellite && isRealMap ? satTexture : null;
+    terrainMat.needsUpdate = true;
+    setVerticalScale();
+    buildTrees();
+    if (satTexture) satTexture.needsUpdate = true;
+    loadingEl.classList.add('hidden');
+    flashStats(
+      'Carte chargée : relief ' + Math.round(data.elevationMin) + '–' + Math.round(data.elevationMax) +
+      ' m, ' + data.orthoTiles + ' tuiles ortho (zoom ' + data.zoom + ')'
+    );
+  } catch (err) {
+    console.error(err);
+    if (token === loadToken) {
+      loadingEl.classList.add('hidden');
+      flashStats('Échec du chargement de la carte : ' + (err.message || err));
+    }
+  }
+}
+
+function loadProcedural(seed) {
   params.seed = seed;
+  isRealMap = false;
+  satTexture = null;
+  terrainMat.map = null;
+  terrainMat.needsUpdate = true;
   sim = new FireSimulation({
     size: N,
     seed,
@@ -416,10 +562,18 @@ function regen(seed) {
     vegetation: params.vegetation / 100,
     slopeGain: params.effetPente / 100,
   });
-  applyHeights();
+  setVerticalScale();
   buildTrees();
   updateTerrainColors(0);
-  flashStats('Nouveau terrain généré');
+  flashStats('Terrain procédural');
+}
+
+function regen() {
+  if (isRealMap) {
+    loadRealMap();
+  } else {
+    loadProcedural(params.seed);
+  }
 }
 
 window.addEventListener('resize', () => {
