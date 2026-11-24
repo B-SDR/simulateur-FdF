@@ -25,6 +25,18 @@ Puis ouvrir <http://localhost:8000>.
 npm test
 ```
 
+## Cartes réelles (MNT + orthophotos)
+
+Le panneau **« Carte réelle »** permet de simuler sur un site réel, sans aucune clé API :
+
+- **Relief** : MNT global [Mapzen Terrarium](https://registry.opendata.aws/terrain-tiles/) (tuiles PNG, décodage `R×256 + G + B/256 − 32768`), jusqu'au zoom 14 (~10 m/px).
+- **Végétation** : orthophotos IGN (`data.geopf.fr`, WMTS public) — la couleur de chaque cellule (indice de verdissement + luminance) estime le combustible : forêt dense, garrigue, vignes, roche, zone urbaine ; la mer (altitude < 0) est incombustible et colorée en bleu.
+- **Texture satellite** plaquée sur le terrain (activable/désactivable), exagération verticale réglable.
+
+Présets : Massif de la Clape, Massif de Fontfroide, Corbières (Peyrepertuse), Cévennes (Mont Aigoual), Sainte-Victoire — ou zone personnalisée (latitude/longitude/taille). Le chargement télécharge ~30–70 tuiles (une à deux dizaines de secondes).
+
+La physique (vent, pente issue du vrai relief en mètres/mètres, hygrométrie) s'applique à l'identique sur terrain réel ou procédural.
+
 ## Utilisation
 
 - **Clic gauche** sur le terrain : allumer un feu au point visé.
@@ -70,7 +82,9 @@ au vent, l'extinction à forte hygrométrie et la réinitialisation.
 ├── index.html              page unique + styles + import map Three.js (CDN)
 ├── src/
 │   ├── main.js             rendu 3D, particules, interface, interactions
-│   └── simulation.js       modèle de propagation (pur, testable)
+│   ├── simulation.js       modèle de propagation (pur, testable)
+│   └── realMap.js          cartes réelles : MNT Terrarium + orthophotos IGN
 └── test/
-    └── simulation.test.js  tests du modèle (node --test)
+    ├── simulation.test.js  tests du modèle (node --test)
+    └── realMap.test.js     tests de la chaîne cartographique
 ```
