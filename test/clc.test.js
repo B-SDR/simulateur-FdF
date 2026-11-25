@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyClc, KIND, KIND_COLORS, greennessToFuel } from '../src/realMap.js';
+import { classifyClc, clcRowForCell, KIND, KIND_COLORS, greennessToFuel } from '../src/realMap.js';
 
 test('classification CLC : classes forestières de la palette officielle', () => {
   assert.equal(classifyClc(128, 255, 0).code, 311, 'feuillus');
@@ -44,6 +44,14 @@ test('niveaux de combustible cohérents avec l inflammabilité', () => {
   assert.ok(city.fuel < 0.1, 'urbain quasi incombustible');
   assert.equal(water.fuel, 0, 'eau non combustible');
   assert.equal(water.kind, KIND.WATER);
+});
+
+test('correspondance cellules CLC : image WMS nord en haut, grille j=0 au sud', () => {
+  const gridN = 128, cs = 256;
+  const row = (j) => clcRowForCell(j, gridN, cs);
+  assert.ok(row(0) >= Math.round(cs * 0.99), 'j=0 (sud) → bas de l\u2019image WMS');
+  assert.equal(row(gridN - 1), 1, 'j=N-1 (nord) → haut de l\u2019image WMS');
+  assert.ok(row(70) < cs / 2, 'moitié nord de la grille → moitié haute de l\u2019image');
 });
 
 test('couleurs de rendu définies pour chaque type de couvert', () => {
