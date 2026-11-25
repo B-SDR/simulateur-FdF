@@ -4,10 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/simulation.test.js test/realMap.test.js",
+    "test": "node --test test/simulation.test.js test/realMap.test.js test/clc.test.js",
     "start": "python3 -m http.server 8000 || npx --yes serve ."
-  },
-  "devDependencies": {
-    "pngjs": "^7.0.0"
   }
 }

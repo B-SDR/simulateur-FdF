@@ -25,15 +25,21 @@ Puis ouvrir <http://localhost:8000>.
 npm test
 ```
 
-## Cartes réelles (MNT + orthophotos)
+## Cartes réelles (MNT + orthophotos + occupation du sol)
 
-Le panneau **« Carte réelle »** permet de simuler sur un site réel, sans aucune clé API :
+Le panneau **« Carte réelle »** permet de simuler sur un site réel, sans aucune clé API, avec les données disponibles sur cartes.gouv.fr / `data.geopf.fr` :
 
 - **Relief** : MNT global [Mapzen Terrarium](https://registry.opendata.aws/terrain-tiles/) (tuiles PNG, décodage `R×256 + G + B/256 − 32768`), jusqu'au zoom 14 (~10 m/px).
-- **Végétation** : orthophotos IGN (`data.geopf.fr`, WMTS public) — la couleur de chaque cellule (indice de verdissement + luminance) estime le combustible : forêt dense, garrigue, vignes, roche, zone urbaine ; la mer (altitude < 0) est incombustible et colorée en bleu.
-- **Texture satellite** plaquée sur le terrain (activable/désactivable), exagération verticale réglable.
+- **Occupation du sol** : **CORINE Land Cover 2018** (WMS `data.geopf.fr`, couche `LANDCOVER.CLC18`) — chaque cellule est classée par plus proche couleur dans la palette officielle en 44 postes :
+  - forêts de feuillus (311, combustible 0,85), de conifères (312, 0,95 — résineux très inflammables), mélangées (313, 0,9) ;
+  - végétation sclérophylle / garrigue (323, 0,6), landes et broussailles (322, 0,55), forêt en mutation (324, 0,5) ;
+  - vignobles (221, 0,12), cultures (211/24x, 0,18-0,3), prairies (231, 0,25) ;
+  - urbain (11x/12x/13x, ≤ 0,05), plages/roches (331/332, 0,02), zones brûlées (333/334, 0,06 — coupe-feu) ;
+  - eau (511/512/521, 0 — incombustible).
+- **Végétation fine (repli + texture)** : orthophotos IGN (`ORTHOIMAGERY.ORTHOPHOTOS`) — indice de verdissement + luminance pour les cellules hors couverture CLC, et texture photo plaquée sur le relief.
+- **Rendus** : « Photo satellite » ou « Occupation du sol (CLC) » (couleurs officielles par type de couvert) ; flamme et sol brûlé se superposent au fond dans les deux cas. Arbres 3D positionnés et colorés par essence (feuillus clairs, conifères sombres), absents des cultures et des zones urbaines.
 
-Présets : Massif de la Clape, Massif de Fontfroide, Corbières (Peyrepertuse), Cévennes (Mont Aigoual), Sainte-Victoire — ou zone personnalisée (latitude/longitude/taille). Le chargement télécharge ~30–70 tuiles (une à deux dizaines de secondes).
+Présets : Massif de la Clape, Massif de Fontfroide, Corbières (Peyrepertuse), Cévennes (Mont Aigoual), Sainte-Victoire — ou zone personnalisée (latitude/longitude/taille). Le chargement télécharge ~30–70 tuiles de relief + 2 requêtes WMS.
 
 La physique (vent, pente issue du vrai relief en mètres/mètres, hygrométrie) s'applique à l'identique sur terrain réel ou procédural.
 
@@ -73,7 +79,7 @@ P = P₀ × f(combustible) × sécheresse × effet_vent × effet_pente
   de passer à l'état « brûlé » (le sol brûlé est incombustible — coupe-feu naturel).
 
 Le modèle est isolé dans [`src/simulation.js`](src/simulation.js), sans dépendance au rendu ;
-les tests (`test/simulation.test.js`) vérifient la propagation nominale, l'anisotropie due
+les tests (`test/*.test.js`, 17 au total) vérifient la propagation nominale, l'anisotropie due
 au vent, l'extinction à forte hygrométrie et la réinitialisation.
 
 ## Structure
@@ -86,5 +92,6 @@ au vent, l'extinction à forte hygrométrie et la réinitialisation.
 │   └── realMap.js          cartes réelles : MNT Terrarium + orthophotos IGN
 └── test/
     ├── simulation.test.js  tests du modèle (node --test)
-    └── realMap.test.js     tests de la chaîne cartographique
+    ├── realMap.test.js     tests de la chaîne cartographique
+    └── clc.test.js        tests classification occupation du sol
 ```

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { FireSimulation, State } from './simulation.js';
-import { loadRealTerrain, PRESETS } from './realMap.js';
+import { loadRealTerrain, PRESETS, KIND, KIND_COLORS } from './realMap.js';
 
 const N = 128;
 const WORLD = 140;
@@ -28,6 +28,7 @@ const params = {
   carteTailleKm: 10,
   exageration: 2.2,
   textureSatellite: true,
+  renduTerrain: 'photo',
   arbres3D: true,
 };
 
@@ -105,6 +106,7 @@ let realScale = 14;
 let isRealMap = false;
 let satTexture = null;
 let loadToken = 0;
+let landKindArr = null;
 
 function applyHeights() {
   for (let k = 0; k < N * N; k++) terrainPos.setY(k, sim.height[k] * visScale);
@@ -153,10 +155,19 @@ function buildTrees() {
       _s.setScalar(scale);
       trees.setMatrixAt(n, _m4.compose(_p, _q, _s));
       treeCell[n] = k;
+      let r0 = 0.13, g0 = 0.38, b0 = 0.13;
+      if (landKindArr) {
+        const kind = landKindArr[k];
+        if (kind === KIND.FOREST_LEAF) { r0 = 0.14, g0 = 0.42, b0 = 0.13; }
+        else if (kind === KIND.FOREST_PINE) { r0 = 0.04, g0 = 0.28, b0 = 0.14; }
+        else if (kind === KIND.FOREST_MIXED) { r0 = 0.10, g0 = 0.35, b0 = 0.14; }
+        else if (kind === KIND.SHRUB) { r0 = 0.30, g0 = 0.38, b0 = 0.14; }
+        else if (kind === KIND.GRASS) { r0 = 0.35, g0 = 0.42, b0 = 0.14; }
+      }
       const g = 0.5 + rand() * 0.5;
-      treeBase[n * 3] = 0.10 * g;
-      treeBase[n * 3 + 1] = 0.38 * g;
-      treeBase[n * 3 + 2] = 0.13 * g;
+      treeBase[n * 3] = r0 * g;
+      treeBase[n * 3 + 1] = g0 * g;
+      treeBase[n * 3 + 2] = b0 * g;
       treeColor[n * 3] = treeBase[n * 3];
       treeColor[n * 3 + 1] = treeBase[n * 3 + 1];
       treeColor[n * 3 + 2] = treeBase[n * 3 + 2];
@@ -300,6 +311,14 @@ function updateTerrainColors(time) {
         terrainColors[c] = 0.13;
         terrainColors[c + 1] = 0.26;
         terrainColors[c + 2] = 0.38;
+        continue;
+      }
+      if (params.renduTerrain === 'occupation' && landKindArr) {
+        const kc = KIND_COLORS[landKindArr[k]] || KIND_COLORS[0];
+        const jv = 0.92 + cellHash[k] * 0.16;
+        terrainColors[c] = kc[0] * jv;
+        terrainColors[c + 1] = kc[1] * jv;
+        terrainColors[c + 2] = kc[2] * jv;
         continue;
       }
       if (isRealMap && satTexture && terrainMat.map) {
@@ -474,10 +493,18 @@ fCarte
     if (isRealMap) setVerticalScale();
   });
 fCarte.add(params, 'textureSatellite').name('Texture satellite').onChange((v) => {
-  terrainMat.map = v && isRealMap && satTexture ? satTexture : null;
+  terrainMat.map = v && isRealMap && satTexture && params.renduTerrain === 'photo' ? satTexture : null;
   terrainMat.needsUpdate = true;
   updateTerrainColors(0);
 });
+fCarte
+  .add(params, 'renduTerrain', { 'Photo satellite': 'photo', 'Occupation du sol (CLC)': 'occupation' })
+  .name('Rendu du sol')
+  .onChange(() => {
+    terrainMat.map = params.renduTerrain === 'photo' && params.textureSatellite && isRealMap ? satTexture : null;
+    terrainMat.needsUpdate = true;
+    updateTerrainColors(0);
+  });
 fCarte.add(params, 'arbres3D').name('Arbres 3D').onChange((v) => {
   trees.visible = v;
   if (v) buildTrees();
@@ -523,12 +550,13 @@ async function loadRealMap() {
       realFuel: data.fuels,
       realWater: data.water,
     });
+    landKindArr = data.landKind;
     realScale = sim.heightScale;
     isRealMap = true;
     satTexture = new THREE.CanvasTexture(data.textureCanvas);
     satTexture.colorSpace = THREE.SRGBColorSpace;
     satTexture.anisotropy = 4;
-    terrainMat.map = params.textureSatellite && isRealMap ? satTexture : null;
+    terrainMat.map = params.textureSatellite && params.renduTerrain === 'photo' && isRealMap ? satTexture : null;
     terrainMat.needsUpdate = true;
     setVerticalScale();
     buildTrees();
@@ -536,7 +564,8 @@ async function loadRealMap() {
     loadingEl.classList.add('hidden');
     flashStats(
       'Carte chargée : relief ' + Math.round(data.elevationMin) + '–' + Math.round(data.elevationMax) +
-      ' m, ' + data.orthoTiles + ' tuiles ortho (zoom ' + data.zoom + ')'
+      ' m · occupation du sol : ' + data.landCoverSource.clcCells + ' cellules CLC, ' +
+      data.landCoverSource.orthoCells + ' par ortho'
     );
   } catch (err) {
     console.error(err);
@@ -551,6 +580,7 @@ function loadProcedural(seed) {
   params.seed = seed;
   isRealMap = false;
   satTexture = null;
+  landKindArr = null;
   terrainMat.map = null;
   terrainMat.needsUpdate = true;
   sim = new FireSimulation({
