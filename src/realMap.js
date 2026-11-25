@@ -136,7 +136,26 @@ export async function fetchWmsRaster(mercBox, width, height) {
     .replace('{bbox}', mercBox.map((v) => v.toFixed(1)).join(','))
     .replace('{w}', width)
     .replace('{h}', height);
-  return fetchTileData(url);
+  const delays = [0, 700, 1800];
+  let lastErr;
+  for (let a = 0; a < delays.length; a++) {
+    if (delays[a]) await new Promise((res) => setTimeout(res, delays[a]));
+    try {
+      const res = await fetch(url);
+      const type = res.headers.get('content-type') || '';
+      if (!type.startsWith('image')) {
+        throw new Error(`réponse WMS non image (HTTP ${res.status} ${type.split(';')[0]})`);
+      }
+      return await fetchTileData(url);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
+export function clcRowForCell(j, gridN, cs) {
+  return Math.min(cs - 1, Math.max(0, Math.round((1 - (j + 0.5) / gridN) * cs)));
 }
 
 export function greennessToFuel(r, g, b) {
@@ -325,7 +344,7 @@ export async function loadRealTerrain(options = {}) {
       let entry = null;
       if (clcData) {
         const cqx = Math.min(CS - 1, Math.round(((i + 0.5) / gridN) * CS));
-        const cqy = Math.min(CS - 1, Math.round(((j + 0.5) / gridN) * CS));
+        const cqy = clcRowForCell(j, gridN, CS);
         const co = (cqy * CS + cqx) * 4;
         if (clcData.data[co + 3] > 10) {
           entry = classifyClc(clcData.data[co], clcData.data[co + 1], clcData.data[co + 2]);
@@ -350,12 +369,16 @@ export async function loadRealTerrain(options = {}) {
   for (const t of elevTiles.values()) t.bmp && t.bmp.close && t.bmp.close();
 
   onProgress(1, 1, 'prêt');
+  const degraded = !clcData && orthoOk === 0;
+  if (degraded) {
+    for (let k = 0; k < gridN * gridN; k++) if (!water[k]) fuels[k] = 0.6;
+  }
   return {
     heightsM,
     fuels,
     water,
     landKind,
-    landCoverSource: { clcCells, orthoCells },
+    landCoverSource: { clcCells, orthoCells, degraded },
     elevationMin: elevMin,
     elevationMax: elevMax,
     zoom,

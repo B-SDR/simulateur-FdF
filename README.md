@@ -36,8 +36,8 @@ Le panneau **« Carte réelle »** permet de simuler sur un site réel, sans auc
   - vignobles (221, 0,12), cultures (211/24x, 0,18-0,3), prairies (231, 0,25) ;
   - urbain (11x/12x/13x, ≤ 0,05), plages/roches (331/332, 0,02), zones brûlées (333/334, 0,06 — coupe-feu) ;
   - eau (511/512/521, 0 — incombustible).
-- **Végétation fine (repli + texture)** : orthophotos IGN (`ORTHOIMAGERY.ORTHOPHOTOS`) — indice de verdissement + luminance pour les cellules hors couverture CLC, et texture photo plaquée sur le relief.
-- **Rendus** : « Photo satellite » ou « Occupation du sol (CLC) » (couleurs officielles par type de couvert) ; flamme et sol brûlé se superposent au fond dans les deux cas. Arbres 3D positionnés et colorés par essence (feuillus clairs, conifères sombres), absents des cultures et des zones urbaines.
+- **Végétation fine (repli + texture)** : orthophotos IGN (`ORTHOIMAGERY.ORTHOPHOTOS`) — indice de verdissement + luminance pour les cellules hors couverture CLC, et texture photo plaquée sur le relief. Requête WMS réessayée jusqu'à 3 fois (le service `data.geopf.fr` est parfois indisponible) ; si ortho et CLC échouent, végétation par défaut uniforme.
+- **Rendus** : « Photo satellite » ou « Occupation du sol (CLC) » (couleurs officielles par type de couvert) ; flamme et sol brûlé se superposent au fond dans les deux cas. Arbres 3D positionnés et colorés par classe d'occupation du sol : forêts très denses, garrigue clairsemée (arbustes bas), quelques sujets en prairies et cultures ; absents de l'eau, des zones urbaines et des surfaces rocheuses ou déjà brûlées.
 
 Présets : Massif de la Clape, Massif de Fontfroide, Corbières (Peyrepertuse), Cévennes (Mont Aigoual), Sainte-Victoire — ou zone personnalisée (latitude/longitude/taille). Le chargement télécharge ~30–70 tuiles de relief + 2 requêtes WMS.
 
@@ -79,7 +79,7 @@ P = P₀ × f(combustible) × sécheresse × effet_vent × effet_pente
   de passer à l'état « brûlé » (le sol brûlé est incombustible — coupe-feu naturel).
 
 Le modèle est isolé dans [`src/simulation.js`](src/simulation.js), sans dépendance au rendu ;
-les tests (`test/*.test.js`, 17 au total) vérifient la propagation nominale, l'anisotropie due
+les tests (`test/*.test.js`, 18 au total) vérifient la propagation nominale, l'anisotropie due
 au vent, l'extinction à forte hygrométrie et la réinitialisation.
 
 ## Structure

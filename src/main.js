@@ -147,9 +147,20 @@ function buildTrees() {
   for (let j = 0; j < N && n < TREE_CAP; j++) {
     for (let i = 0; i < N && n < TREE_CAP; i++) {
       const k = j * N + i;
-      if (sim.fuel0[k] < 0.4 || rand() > 0.8) continue;
+      let density = 0, sizeMul = 1;
+      if (landKindArr) {
+        const kind = landKindArr[k];
+        if (kind === KIND.FOREST_PINE || kind === KIND.FOREST_LEAF || kind === KIND.FOREST_MIXED) { density = 0.85; }
+        else if (kind === KIND.SHRUB) { density = 0.55; sizeMul = 0.55; }
+        else if (kind === KIND.GRASS) { density = 0.18; sizeMul = 0.4; }
+        else if (kind === KIND.AGRI) { density = 0.05; sizeMul = 0.7; }
+        else if (kind === KIND.UNKNOWN) { density = sim.fuel0[k] >= 0.45 ? 0.5 : 0; }
+        if (density === 0 || rand() >= density) continue;
+      } else {
+        if (sim.fuel0[k] < 0.4 || rand() > 0.2) continue;
+      }
       const [x, z] = cellWorld(i, j);
-      const scale = 0.7 + sim.fuel0[k] * 0.25 + rand() * 0.5;
+      const scale = (0.7 + sim.fuel0[k] * 0.25 + rand() * 0.5) * sizeMul;
       _p.set(x + (rand() - 0.5) * CELL * 1.2, sim.height[k] * visScale - 0.1, z + (rand() - 0.5) * CELL * 1.2);
       _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * Math.PI * 2);
       _s.setScalar(scale);
@@ -564,8 +575,10 @@ async function loadRealMap() {
     loadingEl.classList.add('hidden');
     flashStats(
       'Carte chargée : relief ' + Math.round(data.elevationMin) + '–' + Math.round(data.elevationMax) +
-      ' m · occupation du sol : ' + data.landCoverSource.clcCells + ' cellules CLC, ' +
-      data.landCoverSource.orthoCells + ' par ortho'
+      ' m · occupation du sol : ' + (data.landCoverSource.degraded
+        ? 'services cartes.gouv.fr indisponibles, végétation par défaut'
+        : data.landCoverSource.clcCells + ' cellules CLC, ' + data.landCoverSource.orthoCells + ' par ortho') +
+      ' · arbres : ' + trees.count
     );
   } catch (err) {
     console.error(err);
